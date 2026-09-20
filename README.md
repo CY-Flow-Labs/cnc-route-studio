@@ -1,5 +1,8 @@
 # CNC Route Studio
 
+[![CI](https://github.com/CY-Flow-Labs/cnc-route-studio/actions/workflows/ci.yml/badge.svg)](https://github.com/CY-Flow-Labs/cnc-route-studio/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 繁體中文、離線優先的 Fanuc 類 3+1 軸 CNC 路線模擬與程式預檢工具。目前版本為 **v1.7.8**。
 
 它可在瀏覽器中同時載入 A／B 兩份 NC 程式，解析常見 G-code、顯示雙色 3D 刀路、比較差異，並在實機執行前協助發現行程、快移入料、刀具與夾具等潛在風險。
@@ -89,3 +92,7 @@ npm run preview
 ## 資料隱私
 
 專案不需要雲端服務，匯入的 NC 內容由瀏覽器在本機處理。公開儲存庫不應提交任何生產程式、機台參數、客戶名稱或其他敏感資料；提交前請再次檢查 Git 變更清單。
+
+## 授權
+
+本專案採用 [MIT License](LICENSE)。
