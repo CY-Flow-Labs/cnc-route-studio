@@ -24,6 +24,6 @@ export function sampleMotionPath(segment:MotionSegment,maxStep=Math.PI/36):Point
 }
 
 export function workToMachine(segment:MotionSegment,point:Point4):Point4{
-  const q=segment.workOffsetValue;
-  return {x:point.x+q.x,y:point.y+q.y,z:point.z+q.z+segment.toolLengthComp,w:point.w+q.w};
+  const q=segment.workOffsetValue,l=segment.localOffset;
+  return {x:point.x+q.x+l.x,y:point.y+q.y+l.y,z:point.z+q.z+l.z+segment.toolLengthComp,w:point.w+q.w+l.w};
 }

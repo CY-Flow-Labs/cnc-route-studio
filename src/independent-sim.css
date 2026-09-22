@@ -211,6 +211,7 @@ body,button,input,select,textarea{font-size:13px}
 
 /* v1.3.7：模擬區右上即時模態狀態。 */
 .live-code-status{position:absolute;z-index:5;top:6px;right:6px;display:grid;gap:3px;width:min(250px,42%);pointer-events:none}
+.rotary-status{position:absolute;z-index:5;left:8px;bottom:8px;display:grid;grid-template-columns:auto auto;gap:2px 9px;padding:7px 9px;border:1px solid #2d8b70;border-radius:6px;background:#071a18e8;color:#bfffe8;font:700 11px Consolas,monospace;pointer-events:none}.rotary-status strong{color:#62e6b7}.rotary-status b{color:#ffe36e;text-align:right}.rotary-status span{grid-column:1/-1;color:#91c7bb;font-weight:400}
 .code-status{display:grid;grid-template-columns:1fr;gap:1px;padding:4px 6px;border:1px solid #37d5ff88;border-radius:4px;background:#071019a8;box-shadow:0 1px 4px #0005;font:9px/1.25 Consolas,monospace;backdrop-filter:blur(2px)}
 .code-status.side-b{border-color:#f4c44e88}.code-status strong{color:#66d8ff}.code-status.side-b strong{color:#f4c44e}
 .code-status output{display:grid;grid-template-columns:16px 1fr;gap:3px;color:#e8f2f8;white-space:normal}.code-status output b{color:#62e6b7}.code-status output:nth-of-type(2) b{color:#ff8c9d}.code-status output:nth-of-type(3) b{color:#f4c44e}

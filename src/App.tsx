@@ -42,8 +42,8 @@ const defaultSectionKey = (text: string) => findProgramSections(text)[0]?.key ??
 export default function App() {
   const [textA, setA] = useState(sampleA),
     [textB, setB] = useState(sampleB),
-    [nameA, setNameA] = useState("demo-a.nc"),
-    [nameB, setNameB] = useState("demo-b.nc"),
+    [nameA, setNameA] = useState("synthetic-demo-a.nc"),
+    [nameB, setNameB] = useState("synthetic-demo-b.nc"),
     [sectionA, setSectionA] = useState(() => defaultSectionKey(sampleA)),
     [sectionB, setSectionB] = useState(() => defaultSectionKey(sampleB)),
     [indexA, setIndexA] = useState(0),
@@ -166,6 +166,17 @@ export default function App() {
     };
     r.readAsText(file);
   };
+  const nativeOpen = async (side: "A" | "B") => {
+    try {
+      const response = await fetch("/api/open-file", { cache: "no-store" });
+      const result = await response.json();
+      if (result.cancelled) return;
+      if (!response.ok || result.error) throw new Error(result.error || `HTTP ${response.status}`);
+      open(side, new File([String(result.content ?? "")], String(result.name || "program.nc"), { type: "text/plain" }));
+    } catch (error) {
+      alert(`匯入失敗：${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
   const issues = [
     ...a.diagnostics.map((d) => ({ ...d, side: "A" })),
     ...b.diagnostics.map((d) => ({ ...d, side: "B" })),
@@ -251,6 +262,7 @@ export default function App() {
                 ]?.line
               }
               onOpen={open}
+              onNativeOpen={nativeOpen}
               differences={side === "B" ? comparison?.bDifferences : undefined}
             />
             </Fragment>
@@ -349,7 +361,7 @@ export default function App() {
         </aside>}
       </section>
       <footer className="app-footer">
-        <span><b>OFFLINE CNC LAB</b>　CNC 雙程式路線模擬器　<small>v1.7.8・中央三鍵控制版</small></span>
+        <span><b>OFFLINE CNC LAB</b>　CNC 雙程式路線模擬器　<small>v1.12.0・轉盤中心尺寸版</small></span>
         <span className={a.complete && b.complete ? "footer-health ok" : "footer-health warn"}>{a.complete && b.complete ? "解析完整" : "結果不完整"}　{a.segments.length + b.segments.length} 動作</span>
       </footer>
     </main>
@@ -410,6 +422,7 @@ function ProgramEditor({
   inputRef,
   currentLine,
   onOpen,
+  onNativeOpen,
   differences,
 }: {
   side: "A" | "B";
@@ -419,6 +432,7 @@ function ProgramEditor({
   inputRef: React.RefObject<HTMLInputElement | null>;
   currentLine?: number;
   onOpen: (side: "A" | "B", file?: File, input?: HTMLInputElement) => void;
+  onNativeOpen: (side: "A" | "B") => void;
   differences?: Map<number, DifferenceKind>;
 }) {
   const area = useRef<HTMLTextAreaElement>(null);
@@ -468,7 +482,7 @@ function ProgramEditor({
           <span>{name}</span>{side === "B" && differences && <output className="editor-diff-count">差異 {differences.size}</output>}
         </div>
         <div>
-          <button type="button" onClick={() => inputRef.current?.click()}>
+          <button type="button" onClick={() => onNativeOpen(side)}>
             匯入
           </button>
           <button type="button" onClick={() => download(name, value)}>
@@ -478,7 +492,6 @@ function ProgramEditor({
             ref={inputRef}
             hidden
             type="file"
-            accept="*/*"
             onChange={(e) => onOpen(side, e.target.files?.[0], e.currentTarget)}
           />
         </div>
@@ -577,6 +590,14 @@ function MachinePanel({
       </label>
       <label><b>/ 選擇性跳段</b><input type="checkbox" checked={value.optionalBlockSkip} onChange={e=>onChange({...value,optionalBlockSkip:e.target.checked})}/><span>{value.optionalBlockSkip?'略過':'執行'}</span></label>
       <label title="FANUC G83 第二次以後快速接近到前一次孔底前 d 的位置；請依機台參數輸入"><b>G83 間隙 d</b><input type="number" min="0" step="any" value={value.g83Clearance} onChange={e=>onChange({...value,g83Clearance:Math.max(0,+e.target.value||0)})}/><span>mm</span><input aria-label="確認 G83 再接近間隙" type="checkbox" checked={value.g83ClearanceConfigured} onChange={e=>onChange({...value,g83ClearanceConfigured:e.target.checked})}/></label>
+      <h3>四面轉盤</h3>
+      <label><b>啟用轉盤</b><input type="checkbox" checked={value.rotary.enabled} onChange={e=>onChange({...value,rotary:{...value.rotary,enabled:e.target.checked}})}/><span>M31–34</span></label>
+      <label><b>中心 Z+W</b><input type="number" step="any" value={value.rotary.centerZW} onChange={e=>onChange({...value,rotary:{...value.rotary,centerZW:+e.target.value}})}/><span>mm</span></label>
+      <label><b>軸向 Y 起點</b><input type="number" step="any" value={value.rotary.centerY} onChange={e=>onChange({...value,rotary:{...value.rotary,centerY:+e.target.value}})}/><span>mm</span></label>
+      <label><b>工件長度</b><input type="number" step="any" value={value.rotary.length} onChange={e=>onChange({...value,rotary:{...value.rotary,length:Math.max(1,+e.target.value)}})}/><span>mm</span></label>
+      <label><b>截面 X</b><input type="number" step="any" value={value.rotary.stockWidth} onChange={e=>onChange({...value,rotary:{...value.rotary,stockWidth:Math.max(1,+e.target.value)}})}/><span>mm</span></label>
+      <label><b>截面 Z</b><input type="number" step="any" value={value.rotary.stockHeight} onChange={e=>onChange({...value,rotary:{...value.rotary,stockHeight:Math.max(1,+e.target.value)}})}/><span>mm</span></label>
+      <label><b>旋轉方向</b><select value={value.rotary.direction} onChange={e=>onChange({...value,rotary:{...value.rotary,direction:+e.target.value as 1|-1}})}><option value="1">+每次 90°</option><option value="-1">-每次 90°</option></select><span></span></label>
       </>
       <>
       <h3>毛胚</h3>
@@ -615,7 +636,7 @@ function MachinePositionPanel({value,onChange}:{value:MachineConfig;onChange:(v:
     <h3>工件原點相對機械原點的位置</h3>
     <p>工件原點的機械位置就是 G54（G55…）設定值；刀長補正只作用於刀具位置，不移動原點。</p>
     {codes.map(code=><output key={code}><b>{code}</b>　{axes.map(axis=><span key={axis}>{axis.toUpperCase()} {value.workOffsets[code][axis].toFixed(3)}　</span>)}</output>)}
-    <small>座標公式：相對座標＝機械座標−G54（G55…）−刀長補正。</small>
+    <small>座標公式：相對座標＝機械座標−G54（G55…）−G52 局部偏移−刀長補正。</small>
   </div>;
 }
 function SystemVariables({title,segment}:{title:string;segment?:MotionSegment}) {
@@ -659,4 +680,4 @@ function LiveMacroTable(props:{textA:string;textB:string;value:MachineConfig;onC
   </div>;
 }
 function toolUses(text:string){const map=new Map<number,number>();for(const raw of text.split(/\r?\n/)){const line=raw.replace(/\([^)]*\)/g,'');for(const m of line.matchAll(/(?:^|\s)T\s*(\d+)/gi)){const n=+m[1];map.set(n,(map.get(n)??0)+1);}}return map;}
-function ToolMagazineTable({value,onChange,a,b,textA,textB}:{value:MachineConfig;onChange:(v:MachineConfig)=>void;a:ParseResult;b:ParseResult;textA:string;textB:string}){const [q,setQ]=useState(''),ua=toolUses(textA),ub=toolUses(textB),pockets=Array.from({length:value.toolMagazineCapacity},(_,i)=>i+1),needle=q.toLowerCase(),shown=pockets.filter(p=>{const t=value.toolMagazine[p]??p;return `p${p} t${t}`.toLowerCase().includes(needle)}),controls=<label className="magazine-capacity">口袋<input type="number" min="1" max="240" value={value.toolMagazineCapacity} onChange={e=>onChange({...value,toolMagazineCapacity:Math.max(1,Math.min(240,+e.target.value||1))})}/></label>;return <VariableTableFrame title="刀庫（機台廠映射）" count={shown.length} query={q} setQuery={setQ} controls={controls}>{shown.map(p=>{const t=value.toolMagazine[p]??p,status=[a.finalSpindleTool===t||b.finalSpindleTool===t?'主軸':'',a.finalPendingTool===t||b.finalPendingTool===t?'待命':''].filter(Boolean).join('／')||'刀庫';return <div className="variable-table-row" key={p}><b>P{p}</b><span>刀具 T<input className="inline-tool" type="number" min="0" value={t} onChange={e=>onChange({...value,toolMagazine:{...value.toolMagazine,[p]:+e.target.value}})}/></span><output>{ua.get(t)??0} 次</output><output>{ub.get(t)??0} 次</output><em>{status}</em></div>})}<div className="macro-note">N4 實檔：T1～T60、54 個不同刀號。T 為預選、M6 才換入主軸；M31～M34 屬機台廠自訂，不在缺少機台手冊時猜測用途。</div></VariableTableFrame>}
+function ToolMagazineTable({value,onChange,a,b,textA,textB}:{value:MachineConfig;onChange:(v:MachineConfig)=>void;a:ParseResult;b:ParseResult;textA:string;textB:string}){const [q,setQ]=useState(''),ua=toolUses(textA),ub=toolUses(textB),pockets=Array.from({length:value.toolMagazineCapacity},(_,i)=>i+1),needle=q.toLowerCase(),shown=pockets.filter(p=>{const t=value.toolMagazine[p]??p;return `p${p} t${t}`.toLowerCase().includes(needle)}),controls=<label className="magazine-capacity">口袋<input type="number" min="1" max="240" value={value.toolMagazineCapacity} onChange={e=>onChange({...value,toolMagazineCapacity:Math.max(1,Math.min(240,+e.target.value||1))})}/></label>;return <VariableTableFrame title="刀庫（機台廠映射）" count={shown.length} query={q} setQuery={setQ} controls={controls}>{shown.map(p=>{const t=value.toolMagazine[p]??p,status=[a.finalSpindleTool===t||b.finalSpindleTool===t?'主軸':'',a.finalPendingTool===t||b.finalPendingTool===t?'待命':''].filter(Boolean).join('／')||'刀庫';return <div className="variable-table-row" key={p}><b>P{p}</b><span>刀具 T<input className="inline-tool" type="number" min="0" value={t} onChange={e=>onChange({...value,toolMagazine:{...value.toolMagazine,[p]:+e.target.value}})}/></span><output>{ua.get(t)??0} 次</output><output>{ub.get(t)??0} 次</output><em>{status}</em></div>})}<div className="macro-note">T 為預選、M6 才換入主軸；M31～M34 可依機台手冊設定為四面轉盤指令。</div></VariableTableFrame>}

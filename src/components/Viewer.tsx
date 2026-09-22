@@ -1,11 +1,14 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
+import { ConvexGeometry } from "three/examples/jsm/geometries/ConvexGeometry.js";
 import type { MachineConfig, MotionSegment, Point4 } from "../types";
 import {sampleMotionPath,workToMachine} from "../core/geometry";
+import {inferRotaryDimensions,isSlowCut} from "../core/reconstruction";
 const cnc = (p: Point4) => new THREE.Vector3(p.x, -(p.z + p.w), p.y),
   f = (v?: number) => Number(v ?? 0).toFixed(3);
 const interpolatePoint=(start:Point4,end:Point4,t:number):Point4=>({x:start.x+(end.x-start.x)*t,y:start.y+(end.y-start.y)*t,z:start.z+(end.z-start.z)*t,w:start.w+(end.w-start.w)*t});
 const pointOnPath=(points:Point4[],progress:number)=>{const scaled=Math.min(points.length-1,progress*(points.length-1)),index=Math.min(points.length-2,Math.floor(scaled));return interpolatePoint(points[index],points[index+1],scaled-index)};
+const rotateWithTable=(point:THREE.Vector3,center:THREE.Vector3,degrees:number)=>point.clone().sub(center).applyAxisAngle(new THREE.Vector3(0,0,1),THREE.MathUtils.degToRad(degrees)).add(center);
 type AnimatedPosition={work:Point4;machine:Point4};
 const mn = (k?: MotionSegment["kind"]) =>
   k === "rapid"
@@ -52,6 +55,12 @@ export function Viewer({
   const cameraState = useRef({ yaw: -0.7, pitch: 0.65, zoom: 1050, target: new THREE.Vector3(), dataKey: "" });
   const playbackState=useRef({playingA,playingB,speedA,speedB});
   playbackState.current={playingA,playingB,speedA,speedB};
+  const displaySegment=(showA?a[Math.min(indexA,a.length-1)]:undefined)??(showB?b[Math.min(indexB,b.length-1)]:undefined);
+  const completedSegments=useMemo(()=>[
+    ...(showA?a.slice(0,Math.max(0,indexA+(playingA?0:1))):[]),
+    ...(showB?b.slice(0,Math.max(0,indexB+(playingB?0:1))):[]),
+  ],[a,b,indexA,indexB,playingA,playingB,showA,showB]);
+  const inferredDimensions=useMemo(()=>inferRotaryDimensions(completedSegments,machine),[completedSegments,machine]);
   useEffect(() => {
     if (!host.current) return;
     const el = host.current,
@@ -71,15 +80,19 @@ export function Viewer({
     scene.add(new THREE.AmbientLight(0xffffff, 1.4));
     const ax = (d: THREE.Vector3, c: number) =>
       scene.add(new THREE.ArrowHelper(d, new THREE.Vector3(), 90, c, 14, 7));
-    ax(new THREE.Vector3(1, 0, 0), 0xff4058);
-    ax(new THREE.Vector3(0, 0, 1), 0x48e081);
-    ax(new THREE.Vector3(0, -1, 0), 0x438cff);
+    if(!machine.rotary.enabled){ax(new THREE.Vector3(1, 0, 0), 0xff4058);ax(new THREE.Vector3(0, 0, 1), 0x48e081);ax(new THREE.Vector3(0, -1, 0), 0x438cff);}
+    if(machine.rotary.enabled){
+      const rotary=machine.rotary,angle=THREE.MathUtils.degToRad(displaySegment?.rotaryAngle??0);
+      const center=new THREE.Vector3(rotary.centerX,-rotary.centerZW,rotary.centerY+rotary.length/2);
+      const assembly=new THREE.Group();assembly.position.copy(center);assembly.rotation.z=angle;scene.add(assembly);
+      const axis=new THREE.Mesh(new THREE.CylinderGeometry(3,3,rotary.length+80,16),new THREE.MeshBasicMaterial({color:0xf4d35e,transparent:true,opacity:.8}));axis.rotation.x=Math.PI/2;assembly.add(axis);
+    }
     const marker=(position:Point4,color:number,size:number)=>{
       const mesh=new THREE.Mesh(new THREE.SphereGeometry(size,16,12),new THREE.MeshBasicMaterial({color}));
       mesh.position.copy(cnc(position));
       scene.add(mesh);
     };
-    marker({x:0,y:0,z:0,w:0},0xffffff,7);
+    if(!machine.rotary.enabled)marker({x:0,y:0,z:0,w:0},0xffffff,7);
     const label=(text:string,position:Point4,color:string)=>{
       const canvas=document.createElement('canvas');canvas.width=256;canvas.height=64;
       const ctx=canvas.getContext('2d');if(!ctx)return;
@@ -87,7 +100,7 @@ export function Viewer({
       const sprite=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(canvas),depthTest:false}));
       sprite.position.copy(cnc(position)).add(new THREE.Vector3(0,18,0));sprite.scale.set(128,32,1);scene.add(sprite);
     };
-    label('機械原點 X0 Y0 Z0',{x:0,y:0,z:0,w:0},'#ffffff');
+    if(!machine.rotary.enabled)label('機械原點 X0 Y0 Z0',{x:0,y:0,z:0,w:0},'#ffffff');
     const stock = new THREE.Mesh(
       new THREE.BoxGeometry(machine.stock.x, machine.stock.z, machine.stock.y),
       new THREE.MeshPhongMaterial({
@@ -102,7 +115,7 @@ export function Viewer({
       -(machine.stock.origin.z + machine.stock.z / 2),
       machine.stock.origin.y,
     );
-    scene.add(stock);
+    if(!machine.rotary.enabled)scene.add(stock);
     if (showFixtures)
       for (const q of machine.fixtures) {
         const m = new THREE.Mesh(
@@ -125,11 +138,17 @@ export function Viewer({
     // 3D 世界一律使用固定機械座標；G54～G59 與刀長只改變刀路換算，不移動機械原點。
     const point=(s:MotionSegment,end=false)=>cnc(end?s.machineEnd:s.machineStart);
     const animations:Array<{side:'A'|'B';segment:MotionSegment;workPoints:Point4[];machinePoints:Point4[];vectors:THREE.Vector3[];line:THREE.Line;tip:THREE.Mesh;tool?:THREE.Mesh;duration:number;progress:number}>=[];
-    const path = (side:'A'|'B',items: MotionSegment[], index: number,playing:boolean,speed:number) =>
+    const machiningEnvelope=new THREE.Box3(),reconstructionPoints:THREE.Vector3[]=[];
+    const path = (side:'A'|'B',items: MotionSegment[], index: number,playing:boolean,speed:number) => {
+      const currentAngle=items[Math.min(index,items.length-1)]?.rotaryAngle??0;
+      const rotaryCenter=new THREE.Vector3(machine.rotary.centerX,-machine.rotary.centerZW,machine.rotary.centerY+machine.rotary.length/2);
+      return (
       items.forEach((s, i) => {
         const workPoints=sampleMotionPath(s),machinePoints=workPoints.map(q=>workToMachine(s,q));
         machinePoints[0]={...s.machineStart};machinePoints[machinePoints.length-1]={...s.machineEnd};
-        const p=machinePoints.map(cnc),
+        const attachToRotatingWorkpiece=machine.rotary.enabled&&i<index;
+        const angleDelta=currentAngle-s.rotaryAngle;
+        const p=machinePoints.map(q=>{const world=cnc(q);return attachToRotatingWorkpiece?rotateWithTable(world,rotaryCenter,angleDelta):world;}),
           now = i === index,
           done = i < index,
           color = now
@@ -146,6 +165,12 @@ export function Viewer({
               transparent: true,
               opacity: now ? 1 : done ? 0.95 : 0.14,
             }));scene.add(line);
+        const completed=i<index||(i===index&&!playing),slowCut=isSlowCut(s,machine);
+        if(completed&&slowCut){
+          const attached=machinePoints.map(cnc).map(point=>machine.rotary.enabled?rotateWithTable(point,rotaryCenter,currentAngle-s.rotaryAngle):point);
+          attached.forEach(point=>{machiningEnvelope.expandByPoint(point);reconstructionPoints.push(point.clone());});
+          if(attached.length>=2){const configuredTool=machine.tools.find(tool=>tool.number===s.tool),radius=Math.max(1,Math.min(12,(configuredTool?.diameter??8)/2)),material=new THREE.MeshStandardMaterial({color:0x43e58f,emissive:0x0b6f43,emissiveIntensity:.5,transparent:true,opacity:.82,roughness:.55}),curve=new THREE.CurvePath<THREE.Vector3>();for(let pointIndex=1;pointIndex<attached.length;pointIndex++)curve.add(new THREE.LineCurve3(attached[pointIndex-1],attached[pointIndex]));scene.add(new THREE.Mesh(new THREE.TubeGeometry(curve,Math.max(2,attached.length*2),radius,8,false),material));}
+        }
         if (now) {
           const tip = new THREE.Mesh(
             new THREE.SphereGeometry(9, 18, 12),
@@ -155,9 +180,14 @@ export function Viewer({
           scene.add(tip);
           animations.push({side,segment:s,workPoints,machinePoints,vectors:p,line,tip,duration:Math.max(.025,s.estimatedSeconds),progress:playing?0:1});
         }
-      });
+      }));
+    };
     if (showA) path('A',a, indexA,playingA,speedA);
     if (showB) path('B',b, indexB,playingB,speedB);
+    // 將四面慢速切削線的取樣點直接重建為工件外殼，不加入推定方盒或轉盤中心點。
+    if(reconstructionPoints.length>=4){
+      try{const unique=[...new Map(reconstructionPoints.map(point=>[`${point.x.toFixed(3)}:${point.y.toFixed(3)}:${point.z.toFixed(3)}`,point])).values()];if(unique.length>=4){const shellGeometry=new ConvexGeometry(unique),shell=new THREE.Mesh(shellGeometry,new THREE.MeshStandardMaterial({color:0x7796a3,transparent:true,opacity:.32,roughness:.72,metalness:.08,side:THREE.DoubleSide,depthWrite:false}));scene.add(shell);scene.add(new THREE.LineSegments(new THREE.EdgesGeometry(shellGeometry,12),new THREE.LineBasicMaterial({color:0xa8edff,transparent:true,opacity:.72})));}}catch{/* 點雲共面時只顯示加工掃掠線 */}
+    }
     const addTool = (side:'A'|'B',cur: MotionSegment | undefined, color: number,playing:boolean) => {
       if (!cur) return;
       const tool = new THREE.Mesh(
@@ -171,10 +201,10 @@ export function Viewer({
     if (showA) addTool('A',a[Math.min(indexA, a.length - 1)], 0x66d8ff,playingA);
     if (showB) addTool('B',b[Math.min(indexB, b.length - 1)], 0xffd166,playingB);
     const visibleItems = [...(showA ? a : []), ...(showB ? b : [])];
-    const dataKey = `${showA}-${showB}-${a.length}-${b.length}-${visibleItems[0]?.id ?? ""}-${visibleItems.at(-1)?.id ?? ""}`;
+    const dataKey = `${showA}-${showB}-${a.length}-${b.length}-${visibleItems[0]?.id ?? ""}-${visibleItems.at(-1)?.id ?? ""}-${machine.rotary.enabled?'rotary-object':'machine'}`;
     if (cameraState.current.dataKey !== dataKey && visibleItems.length) {
       const box = new THREE.Box3();
-      visibleItems.forEach((segment) => sampleMotionPath(segment).forEach(q=>box.expandByPoint(cnc(workToMachine(segment,q)))));
+      if(machine.rotary.enabled&&reconstructionPoints.length)box.setFromPoints(reconstructionPoints);else visibleItems.forEach((segment) => sampleMotionPath(segment).forEach(q=>box.expandByPoint(cnc(workToMachine(segment,q)))));
       box.getCenter(cameraState.current.target);
       const size = box.getSize(new THREE.Vector3());
       const extent = Math.max(size.x, size.y, size.z);
@@ -263,11 +293,12 @@ export function Viewer({
       resizeFrames.forEach(cancelAnimationFrame);
       window.clearTimeout(settleTimer);
       ro.disconnect();
+      scene.traverse(object=>{const renderable=object as THREE.Mesh|THREE.Line|THREE.Sprite;const geometry=(renderable as THREE.Mesh).geometry;if(geometry)geometry.dispose();const materials=Array.isArray(renderable.material)?renderable.material:renderable.material?[renderable.material]:[];for(const material of materials){for(const value of Object.values(material))if(value instanceof THREE.Texture)value.dispose();material.dispose();}});
       renderer.dispose();
       renderer.domElement.remove();
       scene.clear();
     };
-  }, [a, b, indexA, indexB, showA, showB, showFixtures, machine, viewPlane,viewRevision]);
+  }, [a, b, indexA, indexB, showA, showB, showFixtures, machine, viewPlane,viewRevision,displaySegment?.rotaryAngle]);
   const ca = a[Math.min(indexA, a.length - 1)],
     cb = b[Math.min(indexB, b.length - 1)];
   const adjustView=(action:'in'|'out'|'left'|'right'|'up'|'down'|'reset')=>{const state=cameraState.current,step=state.zoom*.08;if(action==='in')state.zoom=Math.max(20,state.zoom*.8);else if(action==='out')state.zoom=Math.min(50000,state.zoom*1.25);else if(action==='left')state.target.x-=step;else if(action==='right')state.target.x+=step;else if(action==='up')state.target.z+=step;else if(action==='down')state.target.z-=step;else state.dataKey='';setViewRevision(v=>v+1);};
@@ -281,12 +312,9 @@ export function Viewer({
           {showA&&<CodeStatus side="A" value={statusA}/>} {showB&&<CodeStatus side="B" value={statusB}/>} 
         </div>
         <div className="legend">
-          <span style={{background:'#fff'}} />機械原點
-          <span className="rapid-dot" />
-          G0 快移 <span className="g1-dot" />
-          G1 切削 <span className="arc-dot" />
-          G2/G3 圓弧
+          {machine.rotary.enabled?<><span className="rapid-dot" />G0 快移 <span className="g1-dot" />G1/G2/G3 加工 <span style={{background:'#62e6b7'}} />重構工件</>:<><span style={{background:'#fff'}} />機械原點 <span className="rapid-dot" />G0 快移 <span className="g1-dot" />G1 切削 <span className="arc-dot" />G2/G3 圓弧</>}
         </div>
+        {machine.rotary.enabled&&<div className="rotary-status"><strong>轉盤 M{displaySegment?.rotaryCode??machine.rotary.zeroCode}</strong><b>{displaySegment?.rotaryAngle??0}°</b><span>中心 X {f(machine.rotary.centerX)}　Z+W {f(machine.rotary.centerZW)}</span><span>{inferredDimensions?`中心推算：寬 ${f(inferredDimensions.width)}　高 ${f(inferredDimensions.height)}　長 ${f(inferredDimensions.length)} mm`:'中心推算：等待已完成的慢速加工線'}</span><span>尺寸僅採已解析、已完成加工面</span></div>}
         <div className="view-presets" aria-label="模擬視角">
           {(["xyz", "xy", "zy"] as const).map((plane) => <button key={plane} type="button" className={viewPlane === plane ? "active" : ""} onClick={() => setViewPlane(plane)}>{plane.toUpperCase()}</button>)}
         </div>
@@ -309,7 +337,7 @@ function Row({ side, s,position }: { side: "A" | "B"; s?: MotionSegment;position
     <div className={`coordinate-row side-${side.toLowerCase()}`}>
       <div>
         <strong>程式 {side}</strong>
-        <span>{s ? `第 ${s.line} 行・${mn(s.kind)}・${s.workOffset}${s.toolLengthComp?`・刀長 ${f(s.toolLengthComp)}`:""}` : "無加工座標"}</span>
+        <span>{s ? `第 ${s.line} 行・${mn(s.kind)}・${s.workOffset}・M${s.rotaryCode} ${s.rotaryAngle}°${s.toolLengthComp?`・刀長 ${f(s.toolLengthComp)}`:""}` : "無加工座標"}</span>
       </div>
       {coords("相對",work)}
       {coords("機械",machine)}

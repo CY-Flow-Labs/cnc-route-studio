@@ -10,3 +10,5 @@ archive/
 Thumbs.db
 .vscode/
 .idea/
+*.nc
+*.NC
