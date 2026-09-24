@@ -5,11 +5,11 @@ const pointBox=(p:Point4,o:Point4,x:number,y:number,z:number,r=0)=>Math.abs(p.x-
 export function analyzeCollisions(result:ParseResult,m:MachineConfig):CollisionEvent[]{
   const events:CollisionEvent[]=[];
   for(const s of result.segments){
-    for(const axis of ['x','y','z','w'] as const)if(s.machineEnd[axis]<m.limits[axis][0]||s.machineEnd[axis]>m.limits[axis][1])events.push({line:s.line,type:'overtravel',severity:'error',message:`機械 ${axis.toUpperCase()}=${s.machineEnd[axis].toFixed(3)} 超出行程 ${m.limits[axis].join('～')}`});
-    const t=m.tools.find(x=>x.number===s.tool);if(s.tool&&!t)events.push({line:s.line,type:'undefined-tool',severity:'warning',message:`T${s.tool} 尚未定義刀具尺寸`});
+    for(const axis of ['x','y','z','w'] as const)if(s.machineEnd[axis]<m.limits[axis][0]||s.machineEnd[axis]>m.limits[axis][1])events.push({line:s.line,type:'overtravel',severity:'error',message:`Machine ${axis.toUpperCase()}=${s.machineEnd[axis].toFixed(3)} exceeds travel ${m.limits[axis].join('～')}`});
+    const t=m.tools.find(x=>x.number===s.tool);if(s.tool&&!t)events.push({line:s.line,type:'undefined-tool',severity:'warning',message:`T${s.tool} tool size is undefined`});
     const radius=(t?.diameter??10)/2;
-    if(s.kind==='rapid'&&pointBox(s.machineEnd,m.stock.origin,m.stock.x,m.stock.y,m.stock.z,radius))events.push({line:s.line,type:'rapid-stock',severity:'error',message:'快速移動進入毛胚範圍'});
-    for(const f of m.fixtures)if(pointBox(s.machineEnd,f.origin,f.x,f.y,f.z,radius))events.push({line:s.line,type:'tool-fixture',severity:'error',message:`刀具可能碰撞夾具「${f.id}」`});
+    if(s.kind==='rapid'&&pointBox(s.machineEnd,m.stock.origin,m.stock.x,m.stock.y,m.stock.z,radius))events.push({line:s.line,type:'rapid-stock',severity:'error',message:'Rapid move enters stock'});
+    for(const f of m.fixtures)if(pointBox(s.machineEnd,f.origin,f.x,f.y,f.z,radius))events.push({line:s.line,type:'tool-fixture',severity:'error',message:`Tool may hit fixture "${f.id}"`});
   }
   return events.filter((e,i,a)=>a.findIndex(x=>x.line===e.line&&x.type===e.type&&x.message===e.message)===i);
 }
