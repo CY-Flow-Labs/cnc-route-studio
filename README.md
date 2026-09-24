@@ -1,13 +1,20 @@
 # CNC 雙程式路線模擬器
 
+[![CI](https://github.com/CY-Flow-Labs/cnc-route-studio/actions/workflows/ci.yml/badge.svg)](https://github.com/CY-Flow-Labs/cnc-route-studio/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 目前版本：v1.15.0。公開版以合成範例作為 A／B 預設程式，也可匯入自己的 CNC 程式。支援 FANUC G52 局部座標偏移與 G10 工件座標設定。工件模型只採用已完成的慢速鋒面，鑽孔循環、純 Z/W 進退刀與其他慢速動作以紫色顯示且不納入外形。M31～M34 加工面會反旋至共同工件方向；G55／G57 成對 Z0 完成面優先定義實際面距，排除刀長與越界刀路影響。尺寸線、刻度與文字跟隨轉盤旋轉，並提供 3D 及上、下、前、後、左、右六個正投影視角。解析器亦已修正 G0～G3 取消 G81～G89 的 FANUC 模態行為，缺少循環取消副程式時仍可恢復後續一般鋒削。
 
 繁體中文、離線優先的 Fanuc 類 3+1 軸 CNC 程式設計與教學預檢工具。
 
+公開版使用合成預設程式，不包含生產 NC 程式或機台專用參數。開啟檔案時會優先使用可用的本機選檔服務；一般瀏覽器環境則使用瀏覽器選檔器。匯入的內容在本機處理。
+
 ## 使用
 
-```powershell
-npm install
+需要 Node.js 20.19 以上或 22.12 以上，以及支援 WebGL 的瀏覽器。
+
+```bash
+npm ci
 npm run dev
 ```
 
@@ -32,3 +39,9 @@ npm run dev
 - 以通用可調機台檢查行程、快移入料、刀具與方塊夾具風險，並以刀路掃掠提供近似材料去除預覽。
 - 缺少 M98/G65 子程式或未知巨集時會略過並警告，分析結果標示不完整。
 - 本工具不是控制器模擬器，也不能取代實機單節、乾跑與專業數位分身驗證。
+
+## 維護與參與
+
+CY Flow Labs 維護此公開專案。問題回報、功能建議與程式貢獻請先閱讀 [CONTRIBUTING.md](CONTRIBUTING.md)；目前優先事項與驗收標準見 [ROADMAP.md](ROADMAP.md)。版本變更記錄在 [CHANGELOG.md](CHANGELOG.md)，程式碼採用 [MIT 授權](LICENSE)。
+
+請勿在 Issue、PR 或測試資料中提交生產 NC 程式、客戶資料或機台參數。可用合成範例重現問題；無法公開的資料請先自行去識別化。

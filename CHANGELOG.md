@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.15.0 - 2026-09-24
+
+- Refined four-face reconstruction so only completed milling surfaces shape the preview; drilling cycles and axial approach moves remain visible without changing the reconstructed outline.
+- Added finished-face distance inference for paired G55/G57 Z0 surfaces, rotary dimension labels, and six orthographic views alongside 3D view.
+- Corrected G0–G3 behavior after G81–G89 canned cycles and added parser and reconstruction regression cases.
+- Kept the public default program synthetic and added a browser file-picker fallback when the optional local picker service is unavailable.
+
+The simulator remains an educational preflight tool. Its output does not replace controller simulation, dry runs, or qualified operator checks.
+
 ## 1.12.0 - 2026-09-22
 
 - Added configurable four-face rotary-table support for M31–M34, including zero face and rotation direction.
